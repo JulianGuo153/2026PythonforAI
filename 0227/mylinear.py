@@ -87,5 +87,9 @@ for epoch in range(epochs):
 print(f'真实的函数值是{true_w}和{true_b}')
 print(f'训练得到的值是{w_0}和{b_0}')
 
+idx = 3
+plt.plot(X[:, idx].detach().numpy(), X[:, idx].detach().numpy()*w_0[idx].detach().numpy() + b_0.detach().numpy())
+plt.scatter(X[:, idx], Y, 1)
+plt.show()
 if __name__ == '__main__':
     pass
