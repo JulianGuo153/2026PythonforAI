@@ -11,13 +11,49 @@ from matplotlib import pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 import torch.nn as nn
 import time
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.feature_selection import SelectKBest, chi2
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+
+def get_feature_importance(feature_data, label_data, k =4,column = None):
+    """
+    此处省略 feature_data, label_data 的生成代码。
+    如果是 CSV 文件，可通过 read_csv() 函数获得特征和标签。
+    这个函数的目的是， 找到所有的特征种， 比较有用的k个特征， 并打印这些列的名字。
+    """
+    model = SelectKBest(chi2, k=k)      #定义一个选择k个最佳特征的函数
+    feature_data = np.array(feature_data, dtype=np.float64)
+    # label_data = np.array(label_data, dtype=np.float64)
+    X_new = model.fit_transform(feature_data, label_data)   #用这个函数选择k个最佳特征
+    #feature_data是特征数据，label_data是标签数据，该函数可以选择出k个特征
+    print('x_new', X_new)
+    scores = model.scores_                # scores即每一列与结果的相关性
+    # 按重要性排序，选出最重要的 k 个
+    indices = np.argsort(scores)[::-1]        #[::-1]表示反转一个列表或者矩阵。
+    # argsort这个函数， 可以矩阵排序后的下标。 比如 indices[0]表示的是，scores中最小值的下标。
+
+    if column:                            # 如果需要打印选中的列
+        k_best_features = [column[i+1] for i in indices[0:k].tolist()]         # 选中这些列 打印
+        print('k best features are: ',k_best_features)
+    return X_new, indices[0:k]                  # 返回选中列的特征和他们的下标。
 
 class CovidDataset(Dataset):
-    def __init__(self, file_path, mode="train"):
+    def __init__(self, file_path, mode="train", all_feature=True, feature_dim=6):
         with open(file_path, "r") as f:
             ori_data = list(csv.reader(f))
+            column = ori_data[0]
             csv_data = np.array(ori_data[1:])[:, 1:].astype(float)
 
+        feature = np.array(ori_data[1:])[:, 1:-1]
+        label_data = np.array(ori_data[1:])[:, -1]
+        if all_feature:
+            col = np.array([i for i in range(len(feature))])
+        else:
+            _, col = get_feature_importance(feature, label_data, feature_dim, column) # 下划线的功能只接受函数的部分返回，起占位作用
+        col = col.tolist()
         if mode == "train": # 逢五取一
             indices = [i for i in range(len(csv_data)) if i % 5 != 0]
             self.y = torch.tensor(csv_data[indices, -1])
@@ -29,7 +65,7 @@ class CovidDataset(Dataset):
         else:
             indices = [i for i in range(len(csv_data))]
             data = torch.tensor(csv_data[indices])
-
+        data = data[:, col]
         self.data = (data - data.mean(dim=0, keepdim=True))/data.std(dim=0, keepdim=True)
         self.mode = mode
 
@@ -132,14 +168,18 @@ def mesLoss_with_reg(pred, target, model):
 
 
 
-
+all_feature = False
+if all_feature:
+    feature_dim = 93
+else:
+    feature_dim = 6
 
 train_file = "covid.train.csv"
 test_file = "covid.test.csv"
 
-train_dataset = CovidDataset(train_file, "train")
-validate_dataset = CovidDataset(train_file, "validate")
-test_dataset = CovidDataset(test_file, "test")
+train_dataset = CovidDataset(train_file, "train", all_feature=all_feature, feature_dim=feature_dim)
+validate_dataset = CovidDataset(train_file, "validate", all_feature=all_feature, feature_dim=feature_dim)
+test_dataset = CovidDataset(test_file, "test", all_feature=all_feature, feature_dim=feature_dim)
 
 # file = pd.read_csv(train_file)
 # print(file.head())
@@ -152,7 +192,7 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     # for batch_x, batch_y in train_loader:
     #     print(batch_x, batch_y)
-    model = MyModel(input_dim=93)
+    model = MyModel(input_dim=feature_dim)
     # predy = model(batch_x)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
@@ -165,7 +205,7 @@ if __name__ == '__main__':
         "output_path": "D:\PythonAI\code\python_code2025\\2026PythonforAI\\0307\\pred.csv"
     }
 
-    model = MyModel(input_dim=93).to(device)
+    model = MyModel(input_dim=feature_dim).to(device)
     loss = mesLoss_with_reg
     optimizer = torch.optim.SGD(model.parameters(), lr=config["lr"], momentum=config["momentum"])
 
